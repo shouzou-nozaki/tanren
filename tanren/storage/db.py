@@ -1,4 +1,5 @@
 import sqlite3
+from datetime import date
 from tanren.config import DB_FILE, ensure_data_dir
 
 def get_connection() -> sqlite3.Connection:
@@ -89,3 +90,12 @@ def init_db():
             );
         """)
     conn.close()
+
+
+def has_checkin_today() -> bool:
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT id FROM checkins WHERE date = ?", (date.today().isoformat(),)
+    ).fetchone()
+    conn.close()
+    return row is not None
