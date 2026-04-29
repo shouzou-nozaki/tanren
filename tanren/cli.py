@@ -1,6 +1,6 @@
 import sys
 import typer
-from tanren.commands import checkin, ask, review, skills, report, setup, compact
+from tanren.commands import checkin, ask, review, skills, report, setup, compact, history
 from tanren.commands import goal, budget
 
 # WSL環境での日本語入力エンコーディング問題を修正
@@ -23,6 +23,7 @@ app.command()(review.review)
 app.command()(skills.skills)
 app.command()(report.report)
 app.command()(compact.compact)
+app.command()(history.history)
 
 @app.command()
 def ask(question: str = typer.Argument(..., help="コーチへの質問")):
