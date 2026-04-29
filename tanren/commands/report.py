@@ -1,3 +1,4 @@
+import typer
 from datetime import date, timedelta
 from collections import Counter
 from rich.console import Console
@@ -16,6 +17,11 @@ def report():
     if not config.is_configured():
         console.print("[red]先に tanren setup を実行してください[/red]")
         return
+
+    if not db.has_checkin_today():
+        console.print("[yellow]⚠ 今日のチェックインがまだです。先に tanren checkin を実行することをおすすめします。[/yellow]")
+        if not typer.confirm("このまま続けますか？", default=False):
+            return
 
     status = budget.check()
     if status == "blocked":

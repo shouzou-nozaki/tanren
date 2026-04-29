@@ -17,6 +17,11 @@ def review(
         console.print("[red]先に tanren setup を実行してください[/red]")
         return
 
+    if not db.has_checkin_today():
+        console.print("[yellow]⚠ 今日のチェックインがまだです。先に tanren checkin を実行することをおすすめします。[/yellow]")
+        if not typer.confirm("このまま続けますか？", default=False):
+            return
+
     status = budget.check()
     if status == "blocked":
         console.print("[red]今月の予算上限に達しました。tanren budget status で確認してください。[/red]")
