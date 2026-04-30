@@ -80,3 +80,6 @@ def ask(question: str = None):
                 ),
             )
         conn.close()
+
+        from tanren.commands.compact import compact_sessions_if_needed
+        compact_sessions_if_needed()

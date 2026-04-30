@@ -45,7 +45,17 @@ def _build_context() -> str:
 
     summaries = conn.execute(
         """SELECT type, period, content, original_count
-           FROM summaries ORDER BY period DESC LIMIT 12"""
+           FROM summaries WHERE type != 'session_summary'
+           ORDER BY period DESC LIMIT 12"""
+    ).fetchall()
+
+    session_summary = conn.execute(
+        "SELECT content FROM summaries WHERE type = 'session_summary' ORDER BY created_at DESC LIMIT 1"
+    ).fetchone()
+
+    recent_sessions = conn.execute(
+        """SELECT prompt, response, created_at FROM sessions
+           ORDER BY created_at DESC LIMIT 10"""
     ).fetchall()
 
     goals = conn.execute(
@@ -72,6 +82,15 @@ def _build_context() -> str:
         parts.append("\n【過去のサマリー記録】")
         for s in summaries:
             parts.append(f"[{s['type']} {s['period']} / {s['original_count']}件]\n{s['content']}")
+
+    if session_summary:
+        parts.append("\n【過去のコーチングやり取り（サマリー）】")
+        parts.append(session_summary["content"])
+
+    if recent_sessions:
+        parts.append("\n【直近のコーチングやり取り（新しい順）】")
+        for s in recent_sessions:
+            parts.append(f"[{s['created_at'][:10]}]\nQ: {s['prompt']}\nA: {s['response']}")
 
     if goals:
         parts.append("\n【現在の目標】")
