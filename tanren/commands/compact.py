@@ -2,7 +2,8 @@ from datetime import date, timedelta
 from collections import defaultdict
 from rich.console import Console
 from rich.table import Table
-from tanren.storage import db
+from tanren import config
+from tanren.storage import db, budget
 
 console = Console()
 
@@ -20,10 +21,11 @@ def compact():
     weekly_count = _compact_to_weekly(conn, today)
     monthly_count = _compact_to_monthly(conn, today)
     yearly_count = _compact_to_yearly(conn, today)
+    session_count = _compact_sessions(conn)
 
     conn.close()
 
-    if weekly_count + monthly_count + yearly_count == 0:
+    if weekly_count + monthly_count + yearly_count + session_count == 0:
         console.print("[dim]圧縮対象のデータはありませんでした[/dim]")
         return
 
@@ -36,6 +38,8 @@ def compact():
         table.add_row("月次サマリー化", f"{monthly_count} 件の週次サマリー")
     if yearly_count:
         table.add_row("年次サマリー化", f"{yearly_count} 件の月次サマリー")
+    if session_count:
+        table.add_row("セッションサマリー化", f"{session_count} 件の過去のやり取り")
     console.print(table)
 
 
@@ -168,12 +172,64 @@ def _compact_to_yearly(conn, today: date) -> int:
     return count
 
 
+def _compact_sessions(conn) -> int:
+    """直近10件を超えるセッションをAIでサマリー化する"""
+    all_sessions = conn.execute(
+        "SELECT id, prompt, response, created_at FROM sessions ORDER BY created_at DESC"
+    ).fetchall()
+
+    if len(all_sessions) <= 10:
+        return 0
+
+    to_compact = all_sessions[10:]  # 11件目以降（古い順）
+
+    history_text = "\n---\n".join(
+        f"[{s['created_at'][:10]}]\nQ: {s['prompt']}\nA: {s['response']}"
+        for s in reversed(to_compact)
+    )
+
+    prompt = f"""以下のコーチングやり取り記録（{len(to_compact)}件）を、重要な学び・決定事項・繰り返しのテーマに絞って簡潔にサマリーしてください。
+将来の会話でコーチが参照するための記録なので、具体的なトピック・結論・課題を残してください。
+
+{history_text}"""
+
+    import anthropic as _anthropic
+    from tanren.ai.client import MODEL, _SYSTEM_PROMPT, calculate_cost
+
+    api_key = config.get("api_key")
+    client = _anthropic.Anthropic(api_key=api_key)
+
+    response = client.messages.create(
+        model=MODEL,
+        max_tokens=1024,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    summary_content = response.content[0].text
+    cost_usd = calculate_cost(response.usage)
+    budget.record(response.usage, cost_usd)
+
+    ids = tuple(s["id"] for s in to_compact)
+    with conn:
+        conn.execute(
+            "DELETE FROM summaries WHERE type = 'session_summary'"
+        )
+        conn.execute(
+            "INSERT INTO summaries (type, period, content, original_count) VALUES (?, ?, ?, ?)",
+            ("session_summary", "all", summary_content, len(to_compact)),
+        )
+        conn.execute(f"DELETE FROM sessions WHERE id IN ({','.join('?' * len(ids))})", ids)
+
+    usd_to_jpy = config.get("usd_to_jpy", 150)
+    console.print(f"[dim]セッションサマリー生成コスト: ¥{cost_usd * usd_to_jpy:.2f}[/dim]")
+    return len(to_compact)
+
+
 def _month_str(d: date) -> str:
     return d.strftime("%Y-%m")
 
 
 def _week_to_month(week_key: str) -> str:
     year, week = week_key.split("-W")
-    # ISO週の月曜日から月を決める
     d = date.fromisocalendar(int(year), int(week), 1)
     return d.strftime("%Y-%m")
