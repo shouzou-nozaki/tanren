@@ -8,8 +8,19 @@ from tanren.storage import budget, db
 console = Console()
 
 
-def ask(question: str):
+def ask(question: str = None):
     """コーチに質問する（過去の記録が文脈として使われる）"""
+    if not question:
+        console.print("[cyan]質問を入力してください（空行で送信）:[/cyan]")
+        lines = []
+        while True:
+            line = input()
+            if line == "":
+                break
+            lines.append(line)
+        question = "\n".join(lines)
+        if not question.strip():
+            return
     if not config.is_configured():
         console.print("[red]先に tanren setup を実行してください[/red]")
         return

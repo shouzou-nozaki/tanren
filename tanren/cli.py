@@ -26,7 +26,7 @@ app.command()(compact.compact)
 app.command()(history.history)
 
 @app.command()
-def ask(question: str = typer.Argument(..., help="コーチへの質問")):
+def ask(question: str = typer.Argument(None, help="コーチへの質問（省略すると対話入力モード）")):
     """コーチに質問する（過去の記録が文脈として使われる）"""
     from tanren.commands.ask import ask as _ask
     _ask(question)
