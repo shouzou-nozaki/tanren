@@ -172,6 +172,20 @@ def _compact_to_yearly(conn, today: date) -> int:
     return count
 
 
+def compact_sessions_if_needed():
+    """セッションが10件を超えていたら自動でサマリー化する"""
+    conn = db.get_connection()
+    count = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
+    conn.close()
+    if count <= 10:
+        return
+    conn = db.get_connection()
+    n = _compact_sessions(conn)
+    conn.close()
+    if n:
+        console.print(f"[dim]過去のやり取り {n} 件を自動でサマリー化しました[/dim]")
+
+
 def _compact_sessions(conn) -> int:
     """直近10件を超えるセッションをAIでサマリー化する"""
     all_sessions = conn.execute(
