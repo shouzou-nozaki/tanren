@@ -30,16 +30,6 @@ def ask(question: str = None):
         if not typer.confirm("このまま続けますか？", default=False):
             return
 
-    status = budget.check()
-    if status == "blocked":
-        console.print("[red]今月の予算上限に達しました。tanren budget status で確認してください。[/red]")
-        return
-    if status == "warning":
-        usage = budget.get_usage()
-        spent_yen = usage["cost_usd"] * config.get("usd_to_jpy", 150)
-        limit_yen = config.get("budget_limit_yen", 300)
-        console.print(f"[yellow]⚠ 予算警告: 今月 ¥{spent_yen:.0f} / ¥{limit_yen}[/yellow]")
-
     console.print(Panel(f"[dim]{question}[/dim]", title="[cyan]質問[/cyan]", expand=False))
     console.print("\n[cyan bold]コーチ:[/cyan bold]\n")
 
@@ -58,11 +48,10 @@ def ask(question: str = None):
     console.print("\n")
 
     if usage:
-        cost_usd = client.calculate_cost(usage)
-        cost_yen = cost_usd * config.get("usd_to_jpy", 150)
-        console.print(f"[dim]今回のコスト: ¥{cost_yen:.2f}[/dim]")
+        tokens = getattr(usage, "total_token_count", 0)
+        console.print(f"[dim]トークン使用: {tokens}[/dim]")
 
-        budget.record(usage, cost_usd)
+        budget.record(usage)
 
         conn = db.get_connection()
         with conn:
@@ -73,10 +62,10 @@ def ask(question: str = None):
                     "ask",
                     question,
                     full_response,
-                    getattr(usage, "input_tokens", 0),
-                    getattr(usage, "output_tokens", 0),
-                    getattr(usage, "cache_read_input_tokens", 0),
-                    cost_usd,
+                    getattr(usage, "prompt_token_count", 0),
+                    getattr(usage, "candidates_token_count", 0),
+                    getattr(usage, "cached_content_token_count", 0),
+                    0.0,
                 ),
             )
         conn.close()

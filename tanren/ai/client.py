@@ -1,14 +1,10 @@
-import anthropic
+from google import genai
+from google.genai import types
 from datetime import date
 from tanren import config
 from tanren.storage import db
 
-MODEL = "claude-sonnet-4-6"
-
-_INPUT_PRICE       = 3.00  / 1_000_000
-_OUTPUT_PRICE      = 15.00 / 1_000_000
-_CACHE_WRITE_PRICE = 3.75  / 1_000_000
-_CACHE_READ_PRICE  = 0.30  / 1_000_000
+MODEL = "gemini-2.0-flash"
 
 _SYSTEM_PROMPT = """あなたは豊富な実務経験を持つシニアエンジニアリングコーチです。
 落ち着いた専門家として、的確で実践的なアドバイスを行います。
@@ -122,37 +118,33 @@ def _build_context() -> str:
 
 
 def calculate_cost(usage) -> float:
-    return (
-        getattr(usage, "input_tokens", 0)                  * _INPUT_PRICE
-        + getattr(usage, "output_tokens", 0)               * _OUTPUT_PRICE
-        + getattr(usage, "cache_creation_input_tokens", 0) * _CACHE_WRITE_PRICE
-        + getattr(usage, "cache_read_input_tokens", 0)     * _CACHE_READ_PRICE
-    )
+    return 0.0
 
 
 def chat_stream(question: str):
-    """ストリーミングでレスポンスを生成する。(text_chunk を yield し、最後に usage を返す)"""
+    """ストリーミングでレスポンスを生成する。(text_chunk を yield し、最後に usage_metadata を返す)"""
     api_key = config.get("api_key")
-    client = anthropic.Anthropic(api_key=api_key)
+    client = genai.Client(api_key=api_key)
 
     context = _build_context()
-
-    system_content = [
-        {"type": "text", "text": _SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}},
-    ]
+    system = _SYSTEM_PROMPT
     if context:
-        system_content.append(
-            {"type": "text", "text": context, "cache_control": {"type": "ephemeral"}}
-        )
+        system += "\n\n" + context
 
-    with client.messages.stream(
+    response = client.models.generate_content_stream(
         model=MODEL,
-        max_tokens=1024,
-        system=system_content,
-        messages=[{"role": "user", "content": question}],
-    ) as stream:
-        for text in stream.text_stream:
-            yield text
-        final = stream.get_final_message()
+        contents=question,
+        config=types.GenerateContentConfig(
+            system_instruction=system,
+            max_output_tokens=1024,
+        ),
+    )
 
-    return final.usage
+    usage_metadata = None
+    for chunk in response:
+        if chunk.text:
+            yield chunk.text
+        if chunk.usage_metadata:
+            usage_metadata = chunk.usage_metadata
+
+    return usage_metadata
