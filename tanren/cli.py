@@ -1,4 +1,5 @@
 import sys
+import readline  # noqa: F401 — enables arrow keys and line editing in input()
 import typer
 from tanren.commands import checkin, ask, review, skills, report, setup, compact, history
 from tanren.commands import goal, budget
