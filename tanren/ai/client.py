@@ -1,4 +1,5 @@
 import anthropic
+from datetime import date
 from tanren import config
 from tanren.storage import db
 
@@ -40,7 +41,7 @@ def _build_context() -> str:
 
     checkins = conn.execute(
         """SELECT date, work_summary, learnings, blockers, energy_level
-           FROM checkins ORDER BY date DESC LIMIT 30"""
+           FROM checkins ORDER BY date DESC LIMIT 60"""
     ).fetchall()
 
     summaries = conn.execute(
@@ -55,7 +56,7 @@ def _build_context() -> str:
 
     recent_sessions = conn.execute(
         """SELECT prompt, response, created_at FROM sessions
-           ORDER BY created_at DESC LIMIT 10"""
+           ORDER BY created_at DESC LIMIT 5"""
     ).fetchall()
 
     goals = conn.execute(
@@ -71,11 +72,21 @@ def _build_context() -> str:
     parts = []
 
     if checkins:
-        parts.append("【最近のチェックイン記録（新しい順）】")
+        parts.append("【最近のチェックイン記録（週別）】")
+        by_week: dict[str, list] = {}
         for c in checkins:
-            entry = f"[{c['date']}] エネルギー:{c['energy_level']}/5\n  作業: {c['work_summary']}\n  学び: {c['learnings']}"
-            if c["blockers"]:
-                entry += f"\n  詰まり: {c['blockers']}"
+            d = date.fromisoformat(c["date"])
+            week_key = f"{d.isocalendar().year}-W{d.isocalendar().week:02d}"
+            by_week.setdefault(week_key, []).append(c)
+        for week_key in sorted(by_week.keys(), reverse=True):
+            entries = by_week[week_key]
+            avg_energy = sum(e["energy_level"] or 0 for e in entries) / len(entries)
+            works = "・".join(e["work_summary"] for e in entries if e["work_summary"])
+            learnings = "・".join(e["learnings"] for e in entries if e["learnings"])
+            blockers = "・".join(e["blockers"] for e in entries if e["blockers"])
+            entry = f"[{week_key}] 平均エネルギー:{avg_energy:.1f}/5\n  作業: {works}\n  学び: {learnings}"
+            if blockers:
+                entry += f"\n  詰まり: {blockers}"
             parts.append(entry)
 
     if summaries:
