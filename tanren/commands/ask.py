@@ -44,12 +44,14 @@ def ask(question: str = None):
             full_response += chunk
     except StopIteration as e:
         usage = e.value
+    except RuntimeError as e:
+        console.print(f"\n[red]エラー: {e}[/red]")
+        return
 
     console.print("\n")
 
     if usage:
-        tokens = getattr(usage, "total_token_count", 0)
-        console.print(f"[dim]トークン使用: {tokens}[/dim]")
+        console.print(f"[dim]トークン使用: {usage.total_tokens}[/dim]")
 
         budget.record(usage)
 
@@ -62,9 +64,9 @@ def ask(question: str = None):
                     "ask",
                     question,
                     full_response,
-                    getattr(usage, "prompt_token_count", 0),
-                    getattr(usage, "candidates_token_count", 0),
-                    getattr(usage, "cached_content_token_count", 0),
+                    usage.input_tokens,
+                    usage.output_tokens,
+                    usage.cached_tokens,
                     0.0,
                 ),
             )

@@ -170,10 +170,12 @@ def _print_ai_insight(checkins, skills, goals):
             full_response += chunk
     except StopIteration as e:
         usage = e.value
+    except RuntimeError as e:
+        console.print(f"\n[red]エラー: {e}[/red]")
+        return
 
     console.print("\n")
 
     if usage:
-        tokens = getattr(usage, "total_token_count", 0)
-        console.print(f"[dim]トークン使用: {tokens}[/dim]")
+        console.print(f"[dim]トークン使用: {usage.total_tokens}[/dim]")
         budget.record(usage)

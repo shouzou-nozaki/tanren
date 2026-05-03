@@ -2,7 +2,7 @@ import sys
 import readline  # noqa: F401 — enables arrow keys and line editing in input()
 import typer
 from tanren.commands import checkin, ask, review, skills, report, setup, compact, history
-from tanren.commands import goal, budget
+from tanren.commands import goal, budget, config_cmd
 
 # WSL環境での日本語入力エンコーディング問題を修正
 for _s in (sys.stdin, sys.stdout, sys.stderr):
@@ -17,6 +17,7 @@ app = typer.Typer(
 
 app.add_typer(goal.app, name="goal")
 app.add_typer(budget.app, name="budget")
+app.add_typer(config_cmd.app, name="config")
 
 app.command()(setup.setup)
 app.command()(checkin.checkin)

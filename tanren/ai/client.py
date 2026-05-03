@@ -1,10 +1,8 @@
-from google import genai
-from google.genai import types
 from datetime import date
 from tanren import config
 from tanren.storage import db
-
-MODEL = "gemini-2.5-flash"
+from tanren.ai.providers import REGISTRY, UsageInfo
+from tanren.ai.providers.base import BaseProvider
 
 _SYSTEM_PROMPT = """あなたは豊富な実務経験を持つシニアエンジニアリングコーチです。
 落ち着いた専門家として、的確で実践的なアドバイスを行います。
@@ -29,7 +27,22 @@ _SYSTEM_PROMPT = """あなたは豊富な実務経験を持つシニアエンジ
 - 詰まっている問題には根本原因を掘り下げ、再発しない理解を促す
 - 技術的な質問には正確かつ実践的に答える
 - キャリアやマインドセットの相談にも経験則を踏まえて向き合う
-- 回答は日本語で行う"""
+- 回答は{language}で行う"""
+
+
+def _get_provider() -> BaseProvider:
+    provider_id = config.get("provider", "gemini")
+    model = config.get("model", REGISTRY[provider_id].default_model)
+    api_key = config.get(f"{provider_id}_api_key") or config.get("api_key", "")
+    cls = REGISTRY.get(provider_id)
+    if cls is None:
+        raise RuntimeError(f"未知のプロバイダーです: {provider_id}")
+    return cls(api_key=api_key, model=model)
+
+
+def _build_system() -> str:
+    language = config.get("language", "日本語")
+    return _SYSTEM_PROMPT.format(language=language)
 
 
 def _build_context() -> str:
@@ -117,50 +130,22 @@ def _build_context() -> str:
     return "\n".join(parts)
 
 
-def calculate_cost(usage) -> float:
-    return 0.0
-
-
 def chat_stream(question: str, max_output_tokens: int = 1024):
-    """ストリーミングでレスポンスを生成する。(text_chunk を yield し、最後に usage_metadata を返す)"""
-    from google.genai import errors as genai_errors
-
-    api_key = config.get("api_key")
-    client = genai.Client(api_key=api_key)
-
+    """ストリーミング。text chunk を yield し、UsageInfo を StopIteration で返す"""
+    provider = _get_provider()
+    system = _build_system()
     context = _build_context()
-    system = _SYSTEM_PROMPT
     if context:
         system += "\n\n" + context
+    return provider.chat_stream(question, system, max_output_tokens)
 
-    try:
-        response = client.models.generate_content_stream(
-            model=MODEL,
-            contents=question,
-            config=types.GenerateContentConfig(
-                system_instruction=system,
-                max_output_tokens=max_output_tokens,
-                thinking_config=types.ThinkingConfig(thinking_budget=0),
-            ),
-        )
 
-        usage_metadata = None
-        for chunk in response:
-            if chunk.text:
-                yield chunk.text
-            if chunk.usage_metadata:
-                usage_metadata = chunk.usage_metadata
+def generate(prompt: str, max_output_tokens: int = 1024) -> tuple[str, UsageInfo]:
+    """非ストリーミング。コンテキストなしでシステムプロンプトのみ使用"""
+    provider = _get_provider()
+    system = _build_system()
+    return provider.generate(prompt, system, max_output_tokens)
 
-        return usage_metadata
 
-    except genai_errors.ClientError as e:
-        if e.code == 429:
-            raise RuntimeError(
-                "APIのレート制限に達しました。しばらく待ってから再試行してください。\n"
-                "APIキーが aistudio.google.com で取得したものか確認してください。"
-            ) from e
-        if e.code == 401 or e.code == 403:
-            raise RuntimeError(
-                "APIキーが無効です。tanren setup で aistudio.google.com のキーを再設定してください。"
-            ) from e
-        raise
+def calculate_cost(usage: UsageInfo) -> float:
+    return 0.0

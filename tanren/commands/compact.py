@@ -207,25 +207,9 @@ def _compact_sessions(conn) -> int:
 
 {history_text}"""
 
-    from google import genai
-    from google.genai import types
-    from tanren.ai.client import MODEL, _SYSTEM_PROMPT
+    from tanren.ai import client as ai_client
 
-    api_key = config.get("api_key")
-    genai_client = genai.Client(api_key=api_key)
-
-    response = genai_client.models.generate_content(
-        model=MODEL,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            system_instruction=_SYSTEM_PROMPT,
-            max_output_tokens=1024,
-            thinking_config=types.ThinkingConfig(thinking_budget=0),
-        ),
-    )
-
-    summary_content = response.text
-    usage = response.usage_metadata
+    summary_content, usage = ai_client.generate(prompt, max_output_tokens=1024)
     budget.record(usage)
 
     ids = tuple(s["id"] for s in to_compact)
