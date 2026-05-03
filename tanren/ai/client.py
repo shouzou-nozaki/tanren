@@ -4,7 +4,7 @@ from datetime import date
 from tanren import config
 from tanren.storage import db
 
-MODEL = "gemini-2.0-flash"
+MODEL = "gemini-2.5-flash"
 
 _SYSTEM_PROMPT = """あなたは豊富な実務経験を持つシニアエンジニアリングコーチです。
 落ち着いた専門家として、的確で実践的なアドバイスを行います。
@@ -123,6 +123,8 @@ def calculate_cost(usage) -> float:
 
 def chat_stream(question: str, max_output_tokens: int = 1024):
     """ストリーミングでレスポンスを生成する。(text_chunk を yield し、最後に usage_metadata を返す)"""
+    from google.genai import errors as genai_errors
+
     api_key = config.get("api_key")
     client = genai.Client(api_key=api_key)
 
@@ -131,20 +133,34 @@ def chat_stream(question: str, max_output_tokens: int = 1024):
     if context:
         system += "\n\n" + context
 
-    response = client.models.generate_content_stream(
-        model=MODEL,
-        contents=question,
-        config=types.GenerateContentConfig(
-            system_instruction=system,
-            max_output_tokens=max_output_tokens,
-        ),
-    )
+    try:
+        response = client.models.generate_content_stream(
+            model=MODEL,
+            contents=question,
+            config=types.GenerateContentConfig(
+                system_instruction=system,
+                max_output_tokens=max_output_tokens,
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
+            ),
+        )
 
-    usage_metadata = None
-    for chunk in response:
-        if chunk.text:
-            yield chunk.text
-        if chunk.usage_metadata:
-            usage_metadata = chunk.usage_metadata
+        usage_metadata = None
+        for chunk in response:
+            if chunk.text:
+                yield chunk.text
+            if chunk.usage_metadata:
+                usage_metadata = chunk.usage_metadata
 
-    return usage_metadata
+        return usage_metadata
+
+    except genai_errors.ClientError as e:
+        if e.code == 429:
+            raise RuntimeError(
+                "APIのレート制限に達しました。しばらく待ってから再試行してください。\n"
+                "APIキーが aistudio.google.com で取得したものか確認してください。"
+            ) from e
+        if e.code == 401 or e.code == 403:
+            raise RuntimeError(
+                "APIキーが無効です。tanren setup で aistudio.google.com のキーを再設定してください。"
+            ) from e
+        raise

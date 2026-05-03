@@ -220,6 +220,7 @@ def _compact_sessions(conn) -> int:
         config=types.GenerateContentConfig(
             system_instruction=_SYSTEM_PROMPT,
             max_output_tokens=1024,
+            thinking_config=types.ThinkingConfig(thinking_budget=0),
         ),
     )
 
