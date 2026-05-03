@@ -121,7 +121,7 @@ def calculate_cost(usage) -> float:
     return 0.0
 
 
-def chat_stream(question: str):
+def chat_stream(question: str, max_output_tokens: int = 1024):
     """ストリーミングでレスポンスを生成する。(text_chunk を yield し、最後に usage_metadata を返す)"""
     api_key = config.get("api_key")
     client = genai.Client(api_key=api_key)
@@ -136,7 +136,7 @@ def chat_stream(question: str):
         contents=question,
         config=types.GenerateContentConfig(
             system_instruction=system,
-            max_output_tokens=1024,
+            max_output_tokens=max_output_tokens,
         ),
     )
 

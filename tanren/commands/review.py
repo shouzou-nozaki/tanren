@@ -22,16 +22,6 @@ def review(
         if not typer.confirm("このまま続けますか？", default=False):
             return
 
-    status = budget.check()
-    if status == "blocked":
-        console.print("[red]今月の予算上限に達しました。tanren budget status で確認してください。[/red]")
-        return
-    if status == "warning":
-        u = budget.get_usage()
-        spent_yen = u["cost_usd"] * config.get("usd_to_jpy", 150)
-        limit_yen = config.get("budget_limit_yen", 300)
-        console.print(f"[yellow]⚠ 予算警告: 今月 ¥{spent_yen:.0f} / ¥{limit_yen}[/yellow]")
-
     today = date.today()
     if period == "week":
         since = today - timedelta(days=7)
@@ -93,7 +83,7 @@ def review(
 
     full_response = ""
     usage = None
-    gen = _stream_review(prompt)
+    gen = client.chat_stream(prompt, max_output_tokens=2048)
     try:
         while True:
             chunk = next(gen)
@@ -105,10 +95,9 @@ def review(
     console.print("\n")
 
     if usage:
-        cost_usd = client.calculate_cost(usage)
-        cost_yen = cost_usd * config.get("usd_to_jpy", 150)
-        console.print(f"[dim]今回のコスト: ¥{cost_yen:.2f}[/dim]")
-        budget.record(usage, cost_usd)
+        tokens = getattr(usage, "total_token_count", 0)
+        console.print(f"[dim]トークン使用: {tokens}[/dim]")
+        budget.record(usage)
 
         conn = db.get_connection()
         with conn:
@@ -119,33 +108,10 @@ def review(
                     f"review_{period}",
                     prompt,
                     full_response,
-                    getattr(usage, "input_tokens", 0),
-                    getattr(usage, "output_tokens", 0),
-                    getattr(usage, "cache_read_input_tokens", 0),
-                    cost_usd,
+                    getattr(usage, "prompt_token_count", 0),
+                    getattr(usage, "candidates_token_count", 0),
+                    getattr(usage, "cached_content_token_count", 0),
+                    0.0,
                 ),
             )
         conn.close()
-
-
-def _stream_review(prompt: str):
-    api_key = config.get("api_key")
-    import anthropic as _anthropic
-    from tanren.ai.client import MODEL, _SYSTEM_PROMPT
-
-    cl = _anthropic.Anthropic(api_key=api_key)
-    system_content = [
-        {"type": "text", "text": _SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}},
-    ]
-
-    with cl.messages.stream(
-        model=MODEL,
-        max_tokens=2048,
-        system=system_content,
-        messages=[{"role": "user", "content": prompt}],
-    ) as stream:
-        for text in stream.text_stream:
-            yield text
-        final = stream.get_final_message()
-
-    return final.usage
