@@ -36,3 +36,6 @@ def checkin():
     conn.close()
 
     console.print(f"\n[green]✓ 記録しました[/green]  エネルギー: {_ENERGY_LABELS[energy]}")
+
+    from tanren.commands.skills import assess_skills_if_needed
+    assess_skills_if_needed()

@@ -1,159 +1,249 @@
+import json
+import re
 import typer
+from datetime import date, timedelta
 from rich.console import Console
+from rich.padding import Padding
 from rich.table import Table
-from rich.prompt import Prompt, IntPrompt
+from rich.panel import Panel
+from tanren import config
 from tanren.storage import db
 
 console = Console()
 
-_CATEGORIES = ["language", "framework", "infrastructure", "database", "soft", "other"]
+_ASSESSMENT_INTERVAL_DAYS = 7
+
+MAJOR_CATEGORIES: list[str] = [
+    "実装力",
+    "設計力",
+    "インフラ・運用",
+    "データベース",
+    "セキュリティ",
+    "ソフトスキル",
+]
+
+_SKILL_GUIDANCE = {
+    "実装力":       "プログラミング言語名・フレームワーク名のみ（Java, Python, C#, Spring Boot, React 等）。AIツール・ツール活用・開発手法は含めない",
+    "設計力":       "設計手法の種別のみ（システム設計, DB設計, API設計, DDD 等）。課題名・機能名・要件名は含めない",
+    "インフラ・運用": "具体的なツール・サービス名のみ（Docker, AWS, Linux, GitHub Actions, Kubernetes 等）",
+    "データベース":  "具体的なDB製品名のみ（PostgreSQL, MySQL, Oracle, Redis, MongoDB 等）",
+    "セキュリティ":  "セキュリティ専門分野のみ（認証・認可, 暗号化, 脆弱性対策, ゼロトラスト 等）",
+    "ソフトスキル":  "対人・組織スキルのみ（コードレビュー, 技術共有, ドキュメント作成, メンタリング 等）。自己学習・課題認識・学習習慣は含めない",
+}
+
+_SUMMARY_CATEGORY = "__summary__"
+
+
+def assess_skills_if_needed():
+    """前回査定から7日以上経っていれば自動でスキル査定を実行する"""
+    last = config.get("last_skill_assessment")
+    if last:
+        days_since = (date.today() - date.fromisoformat(last)).days
+        if days_since < _ASSESSMENT_INTERVAL_DAYS:
+            return
+
+    console.print("\n[dim]スキルを自動査定中...[/dim]")
+    try:
+        _run_assessment()
+        config.set_value("last_skill_assessment", date.today().isoformat())
+    except Exception as e:
+        console.print(f"[dim]スキル自動査定をスキップしました: {e}[/dim]")
 
 
 def skills(
-    action: str = typer.Argument("list", help="list / add / update / delete"),
-    name: str = typer.Argument(None, help="スキル名（update / delete 時）"),
+    assess: bool = typer.Option(False, "--assess", "-a", help="今すぐAIにスキルを査定させる"),
 ):
-    """スキルマップの表示・更新"""
-    if action == "list":
-        _list_skills()
-    elif action == "add":
-        _add_skill()
-    elif action == "update":
-        if not name:
-            _list_skills()
-            name = Prompt.ask("\n[yellow]更新するスキル名を入力[/yellow]")
-        _update_skill(name)
-    elif action == "delete":
-        if not name:
-            _list_skills()
-            name = Prompt.ask("\n[yellow]削除するスキル名を入力[/yellow]")
-        _delete_skill(name)
-    else:
-        console.print(f"[red]不明なアクション: {action}[/red]  list / add / update / delete のいずれかを指定してください")
+    """AIが査定したスキルマップを表示する"""
+    if assess:
+        console.print("[cyan]スキルを査定中...[/cyan]")
+        try:
+            _run_assessment()
+            config.set_value("last_skill_assessment", date.today().isoformat())
+        except Exception as e:
+            console.print(f"[red]査定に失敗しました: {e}[/red]")
+            return
+        console.print()
+    _list_skills()
 
 
 def _list_skills():
     conn = db.get_connection()
     rows = conn.execute(
-        "SELECT * FROM skills ORDER BY category, level DESC"
+        "SELECT * FROM skills ORDER BY major_category, category, level DESC"
     ).fetchall()
     conn.close()
 
     if not rows:
-        console.print("[dim]スキルが登録されていません。tanren skills add で追加してください。[/dim]")
+        console.print("[dim]スキルが登録されていません。tanren checkin を続けると自動査定されます。[/dim]")
         return
 
-    table = Table(title="スキルマップ")
-    table.add_column("スキル名")
-    table.add_column("カテゴリ", width=14)
-    table.add_column("レベル", width=10)
-    table.add_column("メモ")
-
+    # major_category ごとに summary と詳細を分ける
+    summaries: dict[str, dict] = {}
+    details: dict[str, list] = {}
     for r in rows:
-        level = r["level"] or 0
-        bar = "█" * level + "░" * (5 - level)
-        table.add_row(r["name"], r["category"] or "-", f"{bar} {level}/5", r["notes"] or "")
-
-    console.print(table)
-
-
-def _add_skill():
-    name = Prompt.ask("[yellow]スキル名[/yellow]")
-
-    console.print(f"[yellow]カテゴリ[/yellow] [dim]{' / '.join(_CATEGORIES)}[/dim]")
-    category = Prompt.ask("", default="other")
-
-    level = IntPrompt.ask("[yellow]現在のレベル[/yellow] [dim](1=入門 〜 5=エキスパート)[/dim]")
-    while level not in range(1, 6):
-        console.print("[red]1〜5 で入力してください[/red]")
-        level = IntPrompt.ask("[yellow]レベル[/yellow]")
-
-    notes = Prompt.ask("[yellow]メモ[/yellow] [dim](なければEnter)[/dim]", default="")
-
-    conn = db.get_connection()
-    with conn:
-        conn.execute(
-            "INSERT OR IGNORE INTO skills (name, category, level, notes) VALUES (?, ?, ?, ?)",
-            (name, category, level, notes or None),
-        )
-    conn.close()
-
-    console.print(f"[green]✓ {name} を追加しました (Lv.{level})[/green]")
-
-
-def _update_skill(name: str):
-    conn = db.get_connection()
-    row = conn.execute("SELECT * FROM skills WHERE name = ?", (name,)).fetchone()
-    if not row:
-        # 名前が一致しない場合、部分一致で候補を表示
-        candidates = conn.execute(
-            "SELECT name FROM skills WHERE name LIKE ?", (f"%{name}%",)
-        ).fetchall()
-        conn.close()
-        if candidates:
-            console.print(f"[red]'{name}' が見つかりません。候補:[/red]")
-            for c in candidates:
-                console.print(f"  - {c['name']}")
+        major = r["major_category"] or "実装力"
+        if r["category"] == _SUMMARY_CATEGORY:
+            summaries[major] = dict(r)
         else:
-            console.print(f"[red]'{name}' が見つかりません。tanren skills で一覧を確認してください。[/red]")
-        return
+            details.setdefault(major, []).append(r)
 
-    console.print(f"[cyan]{name}[/cyan] を更新します")
-    console.print(f"  現在: カテゴリ={row['category']}  Lv.{row['level']}")
+    last = config.get("last_skill_assessment")
+    label = f"[dim]最終査定: {last}[/dim]" if last else ""
+    level_legend = "[dim]Lv1=指示があればできる  Lv2=一人でできる  Lv3=他人に教えられる  Lv4=改善・最適化できる  Lv5=仕組み化・標準化できる[/dim]"
+    console.print(Panel(f"[bold cyan]スキルマップ[/bold cyan]  {label}\n{level_legend}", expand=False))
+    console.print()
 
-    console.print(f"\n[yellow]カテゴリ[/yellow] [dim]{' / '.join(_CATEGORIES)}[/dim]")
-    new_category = Prompt.ask("", default=row["category"] or "other")
-    while new_category not in _CATEGORIES:
-        console.print(f"[red]{'/'.join(_CATEGORIES)} のいずれかを入力してください[/red]")
-        new_category = Prompt.ask("カテゴリ", default=row["category"] or "other")
+    for major in MAJOR_CATEGORIES:
+        summary = summaries.get(major)
+        skills_list = details.get(major, [])
+        if not summary and not skills_list:
+            continue
 
-    new_level = IntPrompt.ask("[yellow]新しいレベル[/yellow] [dim](1〜5, Enterで変更なし)[/dim]", default=row["level"])
-    while new_level not in range(1, 6):
-        console.print("[red]1〜5 で入力してください[/red]")
-        new_level = IntPrompt.ask("[yellow]レベル[/yellow]")
-
-    notes = Prompt.ask("[yellow]メモ[/yellow] [dim](なければEnter)[/dim]", default=row["notes"] or "")
-
-    with conn:
-        conn.execute(
-            "INSERT INTO skill_history (skill_id, level, notes) VALUES (?, ?, ?)",
-            (row["id"], row["level"], row["notes"]),
-        )
-        conn.execute(
-            "UPDATE skills SET category = ?, level = ?, notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (new_category, new_level, notes or None, row["id"]),
-        )
-    conn.close()
-
-    arrow = "↑" if new_level > row["level"] else ("↓" if new_level < row["level"] else "→")
-    console.print(f"[green]✓ {name}: Lv.{row['level']} {arrow} Lv.{new_level}  カテゴリ: {new_category}[/green]")
-
-
-def _delete_skill(name: str):
-    conn = db.get_connection()
-    row = conn.execute("SELECT * FROM skills WHERE name = ?", (name,)).fetchone()
-    if not row:
-        candidates = conn.execute(
-            "SELECT name FROM skills WHERE name LIKE ?", (f"%{name}%",)
-        ).fetchall()
-        conn.close()
-        if candidates:
-            console.print(f"[red]'{name}' が見つかりません。候補:[/red]")
-            for c in candidates:
-                console.print(f"  - {c['name']}")
+        # 大分類ヘッダー（総評レベル + コメント）
+        if summary:
+            level = summary["level"] or 0
+            bar = "█" * level + "░" * (5 - level)
+            notes = summary["notes"] or ""
+            console.print(f"[bold cyan]◆ {major}[/bold cyan]  {bar} {level}/5  [dim]{notes}[/dim]")
         else:
-            console.print(f"[red]'{name}' が見つかりません。[/red]")
-        return
+            console.print(f"[bold cyan]◆ {major}[/bold cyan]")
 
-    confirm = Prompt.ask(f"[red]{name}[/red] を削除しますか？ [dim](y/N)[/dim]", default="N")
-    if confirm.lower() != "y":
-        console.print("[dim]キャンセルしました[/dim]")
-        conn.close()
-        return
+        # 詳細
+        for r in skills_list:
+            lv = r["level"] or 0
+            bar = "█" * lv + "░" * (5 - lv)
+            console.print(f"    {r['name']}    {bar} {lv}/5")
+            if r["notes"]:
+                console.print(Padding(f"[dim]{r['notes']}[/dim]", pad=(0, 4, 0, 6)))
 
-    with conn:
-        conn.execute("DELETE FROM skill_history WHERE skill_id = ?", (row["id"],))
-        conn.execute("DELETE FROM skills WHERE id = ?", (row["id"],))
+        console.print()
+
+
+def _build_assessment_prompt() -> str:
+    conn = db.get_connection()
+
+    since = (date.today() - timedelta(days=60)).isoformat()
+    checkins = conn.execute(
+        """SELECT date, work_summary, learnings, blockers
+           FROM checkins WHERE date >= ? ORDER BY date DESC""",
+        (since,),
+    ).fetchall()
+
+    sessions = conn.execute(
+        "SELECT prompt FROM sessions ORDER BY created_at DESC LIMIT 10"
+    ).fetchall()
+
+    goals = conn.execute(
+        "SELECT title FROM goals WHERE status = 'active'"
+    ).fetchall()
+
     conn.close()
 
-    console.print(f"[green]✓ {name} を削除しました[/green]")
+    checkin_text = "\n".join(
+        f"[{c['date']}] {c['work_summary']} / {c['learnings']}"
+        + (f" / {c['blockers']}" if c["blockers"] else "")
+        for c in checkins
+    ) or "記録なし"
+
+    session_text = "\n".join(f"- {s['prompt'][:80]}" for s in sessions) or "記録なし"
+    goal_text = "\n".join(f"- {g['title']}" for g in goals) or "なし"
+
+    guidance = "\n".join(
+        f"  - {major}: skills には {hint}" for major, hint in _SKILL_GUIDANCE.items()
+    )
+
+    return f"""以下のエンジニアの活動記録を分析し、スキルを評価してください。
+
+【直近60日のチェックイン記録】
+{checkin_text}
+
+【最近の質問履歴】
+{session_text}
+
+【現在の目標】
+{goal_text}
+
+---
+
+以下のJSON形式のみで回答してください。説明文は不要です。JSONだけを出力してください。
+
+レベル基準:
+Lv1=指示があればできる
+Lv2=一人でできる
+Lv3=他人に教えられる
+Lv4=改善・最適化できる
+Lv5=仕組み化・標準化できる
+
+各大分類の skills に含めるスキル名の例:
+{guidance}
+
+[
+  {{
+    "major_category": "大分類名（実装力/設計力/インフラ・運用/データベース/セキュリティ/ソフトスキル）",
+    "level": 大分類全体の総合レベル（1〜5）,
+    "summary": "総評コメント（1〜2文）",
+    "skills": [
+      {{"name": "個別スキル名", "level": 1〜5, "reason": "このレベルと評価した根拠（1文）"}}
+    ]
+  }}
+]
+
+制約:
+- 必ず6つの大分類すべてを出力する（記録がない分野は level=1、summary="実績なし"、skills=[] とする）
+- skills は各大分類で最大5個まで、記録に明示的に登場したものだけ含める
+- スキル名は固有の技術名・製品名・手法名のみ（Java, PostgreSQL, Docker, システム設計 等）
+- 以下はスキル名として絶対に使わない:
+  - 練習課題名・タスク名・機能名（例: "レートリミット設計", "ユーザー認証実装"）
+  - AIツール活用・AI補助・AIを使った〇〇（例: "AIを活用したコーディング", "AIでの開発"）
+  - 学習行動・姿勢（例: "自己学習", "課題認識", "学習習慣"）
+  - 曖昧な能力表現（例: "問題解決", "論理的思考", "プログラミング", "開発"）
+- 有効なスキル名が見つからないカテゴリは skills=[] とする（無理に埋めない）"""
+
+
+def _run_assessment():
+    from tanren.ai import client as ai_client
+
+    prompt = _build_assessment_prompt()
+    text, _ = ai_client.generate(prompt, max_output_tokens=1500)
+
+    match = re.search(r"\[.*\]", text, re.DOTALL)
+    if not match:
+        raise ValueError("AIの応答からJSONを抽出できませんでした")
+
+    assessed = json.loads(match.group())
+
+    conn = db.get_connection()
+    with conn:
+        # 既存の査定結果を全削除して入れ直す
+        conn.execute("DELETE FROM skill_history WHERE skill_id IN (SELECT id FROM skills)")
+        conn.execute("DELETE FROM skills")
+
+        for entry in assessed:
+            major = entry.get("major_category", "").strip()
+            level = int(entry.get("level", 1))
+            summary = entry.get("summary", "")
+            skills_list = entry.get("skills", [])
+
+            if major not in MAJOR_CATEGORIES or level not in range(1, 6):
+                continue
+
+            # 総評エントリー
+            conn.execute(
+                "INSERT INTO skills (name, major_category, category, level, notes) VALUES (?, ?, ?, ?, ?)",
+                (major, major, _SUMMARY_CATEGORY, level, summary or None),
+            )
+
+            # 詳細スキル
+            for skill in skills_list[:5]:
+                name = skill.get("name", "").strip()
+                sk_level = int(skill.get("level", 1))
+                reason = skill.get("reason", "").strip()
+                if not name or sk_level not in range(1, 6):
+                    continue
+                conn.execute(
+                    "INSERT OR IGNORE INTO skills (name, major_category, category, level, notes) VALUES (?, ?, ?, ?, ?)",
+                    (name, major, "詳細", sk_level, reason or None),
+                )
+
+    conn.close()
+    console.print("[cyan]スキル査定が完了しました[/cyan]")
