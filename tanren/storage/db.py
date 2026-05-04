@@ -7,7 +7,16 @@ def get_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    _migrate(conn)
     return conn
+
+
+def _migrate(conn: sqlite3.Connection):
+    try:
+        conn.execute("ALTER TABLE skills ADD COLUMN major_category TEXT DEFAULT '実装力'")
+        conn.commit()
+    except Exception:
+        pass
 
 def init_db():
     conn = get_connection()
@@ -89,13 +98,6 @@ def init_db():
                 created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """)
-    # major_category カラムの追加（既存DBへのマイグレーション）
-    try:
-        conn.execute("ALTER TABLE skills ADD COLUMN major_category TEXT DEFAULT '実装力'")
-        conn.commit()
-    except Exception:
-        pass  # already exists
-
     conn.close()
 
 
