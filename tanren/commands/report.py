@@ -170,7 +170,7 @@ def _print_ai_insight(checkins, skills, goals):
             full_response += chunk
     except StopIteration as e:
         usage = e.value
-    except RuntimeError as e:
+    except (RuntimeError, Exception) as e:
         console.print(f"\n[red]エラー: {e}[/red]")
         return
 

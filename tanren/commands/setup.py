@@ -1,7 +1,7 @@
 import typer
 from rich.console import Console
 from rich.panel import Panel
-from rich.prompt import IntPrompt
+from rich.prompt import IntPrompt, Prompt
 from tanren import config
 from tanren.storage import db
 from tanren.ai.providers import REGISTRY, PROVIDER_LIST
@@ -48,12 +48,18 @@ def setup():
     lang_idx = max(1, min(lang_idx, len(AVAILABLE_LANGUAGES)))
     language, _ = AVAILABLE_LANGUAGES[lang_idx - 1]
 
+    # GitHubユーザー名（任意）
+    console.print("\n[yellow]GitHubユーザー名を入力してください[/yellow] [dim](スキル査定の精度が上がります。スキップはEnter)[/dim]")
+    github_username = Prompt.ask("GitHubユーザー名", default="")
+
     # 保存
     cfg = config.load()
     cfg["provider"] = provider_id
     cfg[f"{provider_id}_api_key"] = api_key
     cfg["model"] = model_id
     cfg["language"] = language
+    if github_username:
+        cfg["github_username"] = github_username
     config.save(cfg)
 
     db.init_db()
@@ -62,4 +68,6 @@ def setup():
     console.print(f"  プロバイダー: {REGISTRY[provider_id].display_name}")
     console.print(f"  モデル: {model_id}")
     console.print(f"  言語: {language}")
+    if github_username:
+        console.print(f"  GitHub: {github_username}")
     console.print("\n[dim]tanren checkin で今日の記録を始めましょう[/dim]")

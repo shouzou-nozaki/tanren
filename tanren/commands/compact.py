@@ -180,10 +180,14 @@ def compact_sessions_if_needed():
     if count <= 10:
         return
     conn = db.get_connection()
-    n = _compact_sessions(conn)
-    conn.close()
-    if n:
-        console.print(f"[dim]過去のやり取り {n} 件を自動でサマリー化しました[/dim]")
+    try:
+        n = _compact_sessions(conn)
+        if n:
+            console.print(f"[dim]過去のやり取り {n} 件を自動でサマリー化しました[/dim]")
+    except Exception:
+        pass
+    finally:
+        conn.close()
 
 
 def _compact_sessions(conn) -> int:

@@ -1,7 +1,7 @@
 import typer
 from rich.console import Console
 from rich.table import Table
-from rich.prompt import IntPrompt
+from rich.prompt import IntPrompt, Prompt
 from tanren import config
 from tanren.ai.providers import REGISTRY, PROVIDER_LIST
 
@@ -27,6 +27,7 @@ def show():
     table.add_row("プロバイダー", provider_cls.display_name if provider_cls else provider_id)
     table.add_row("モデル",       config.get("model", "（未設定）"))
     table.add_row("応答言語",     config.get("language", "日本語"))
+    table.add_row("GitHub",       config.get("github_username", "（未設定）"))
     console.print(table)
 
 
@@ -100,6 +101,20 @@ def set_language():
     language, _ = AVAILABLE_LANGUAGES[idx - 1]
     config.set_value("language", language)
     console.print(f"\n[green]✓ 応答言語を {language} に変更しました[/green]")
+
+
+@app.command("github")
+def set_github():
+    """GitHubユーザー名を設定する（スキル査定の精度向上）"""
+    current = config.get("github_username", "")
+    if current:
+        console.print(f"\n現在の設定: [cyan]{current}[/cyan]")
+    username = Prompt.ask("\n[yellow]GitHubユーザー名[/yellow]", default=current)
+    if username:
+        config.set_value("github_username", username)
+        console.print(f"\n[green]✓ GitHubユーザー名を {username} に設定しました[/green]")
+    else:
+        console.print("[dim]変更なし[/dim]")
 
 
 @app.command("api-key")
