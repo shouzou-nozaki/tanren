@@ -40,27 +40,45 @@ class GeminiProvider(BaseProvider):
         except genai_errors.ClientError as e:
             if e.code == 429:
                 raise RuntimeError(
-                    "APIのレート制限に達しました。しばらく待ってから再試行してください。\n"
-                    "APIキーが aistudio.google.com で取得したものか確認してください。"
+                    "APIのレート制限に達しました。しばらく待ってから再試行してください。"
                 ) from e
             if e.code in (401, 403):
                 raise RuntimeError(
                     "APIキーが無効です。tanren config api-key で再設定してください。"
                 ) from e
             raise
+        except genai_errors.ServerError as e:
+            raise RuntimeError(
+                "Gemini APIが混雑しています。しばらく待ってから再試行してください。"
+            ) from e
 
     def generate(self, prompt: str, system: str, max_output_tokens: int = 1024) -> tuple[str, UsageInfo]:
         client = genai.Client(api_key=self._api_key)
-        response = client.models.generate_content(
-            model=self._model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=system,
-                max_output_tokens=max_output_tokens,
-                thinking_config=types.ThinkingConfig(thinking_budget=0),
-            ),
-        )
-        return response.text, self._normalize(response.usage_metadata)
+        try:
+            response = client.models.generate_content(
+                model=self._model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=system,
+                    max_output_tokens=max_output_tokens,
+                    thinking_config=types.ThinkingConfig(thinking_budget=0),
+                ),
+            )
+            return response.text, self._normalize(response.usage_metadata)
+        except genai_errors.ClientError as e:
+            if e.code == 429:
+                raise RuntimeError(
+                    "APIのレート制限に達しました。しばらく待ってから再試行してください。"
+                ) from e
+            if e.code in (401, 403):
+                raise RuntimeError(
+                    "APIキーが無効です。tanren config api-key で再設定してください。"
+                ) from e
+            raise
+        except genai_errors.ServerError as e:
+            raise RuntimeError(
+                "Gemini APIが混雑しています。しばらく待ってから再試行してください。"
+            ) from e
 
     def _normalize(self, raw) -> UsageInfo:
         if raw is None:
