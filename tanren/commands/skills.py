@@ -1,5 +1,6 @@
 import json
 import re
+import typer
 from datetime import date, timedelta
 from rich.console import Console
 from rich.table import Table
@@ -165,8 +166,19 @@ def _run_assessment():
         console.print("[dim]スキルに変更はありませんでした[/dim]")
 
 
-def skills():
+def skills(
+    assess: bool = typer.Option(False, "--assess", "-a", help="今すぐAIにスキルを査定させる"),
+):
     """AIが査定したスキルマップを表示する"""
+    if assess:
+        console.print("[cyan]🔍 スキルを査定中...[/cyan]")
+        try:
+            _run_assessment()
+            config.set_value("last_skill_assessment", date.today().isoformat())
+        except Exception as e:
+            console.print(f"[red]査定に失敗しました: {e}[/red]")
+            return
+        console.print()
     _list_skills()
 
 
