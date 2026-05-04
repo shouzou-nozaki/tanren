@@ -5,12 +5,35 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "tanren"
 version = "0.1.0"
+description = "Technical Agent for Nurturing & Reinforcing Engineering Navigation — AI coaching CLI for engineers"
+readme = "README.md"
+license = { file = "LICENSE" }
 requires-python = ">=3.10"
+authors = [
+    { name = "Shouzou Nozaki", email = "shouzouyeqi66@gmail.com" }
+]
+keywords = ["cli", "coaching", "engineer", "ai", "gemini", "productivity"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Utilities",
+]
 dependencies = [
     "typer[all]>=0.12.0",
     "rich>=13.0.0",
     "google-genai>=1.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/shouzou-nozaki/tanren"
+Repository = "https://github.com/shouzou-nozaki/tanren"
+Issues = "https://github.com/shouzou-nozaki/tanren/issues"
 
 [project.scripts]
 tanren = "tanren.cli:app"
