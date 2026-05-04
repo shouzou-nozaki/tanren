@@ -89,6 +89,13 @@ def init_db():
                 created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """)
+    # major_category カラムの追加（既存DBへのマイグレーション）
+    try:
+        conn.execute("ALTER TABLE skills ADD COLUMN major_category TEXT DEFAULT '実装力'")
+        conn.commit()
+    except Exception:
+        pass  # already exists
+
     conn.close()
 
 
