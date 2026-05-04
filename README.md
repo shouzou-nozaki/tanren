@@ -26,17 +26,7 @@ tanren review    # 週次振り返り
 ## インストール
 
 ```bash
-git clone https://github.com/shouzou-nozaki/tanren.git
-cd tanren
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
-```
-
-PATHを通す（一度だけ）:
-
-```bash
-echo 'export PATH="$HOME/tanren/.venv/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
+pip install tanren
 ```
 
 ---
