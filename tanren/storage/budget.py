@@ -1,5 +1,4 @@
 from datetime import datetime
-from tanren import config
 from tanren.storage import db
 
 
@@ -8,19 +7,6 @@ def current_month() -> str:
 
 
 def check() -> str:
-    """'ok' / 'warning' / 'blocked' を返す"""
-    row = _get_row()
-    cost_usd = row["cost_usd"] if row else 0.0
-
-    limit_yen = config.get("budget_limit_yen", 300)
-    usd_to_jpy = config.get("usd_to_jpy", 150)
-    threshold = config.get("warning_threshold", 0.8)
-    limit_usd = limit_yen / usd_to_jpy
-
-    if cost_usd >= limit_usd:
-        return "blocked"
-    if cost_usd >= limit_usd * threshold:
-        return "warning"
     return "ok"
 
 
@@ -37,12 +23,18 @@ def get_usage() -> dict:
     return dict(row)
 
 
-def record(usage, cost_usd: float):
-    ym = current_month()
-    input_tokens = getattr(usage, "input_tokens", 0)
-    output_tokens = getattr(usage, "output_tokens", 0)
-    cached_tokens = getattr(usage, "cache_read_input_tokens", 0)
+def record(usage):
+    from tanren.ai.providers.base import UsageInfo
+    if isinstance(usage, UsageInfo):
+        input_tokens  = usage.input_tokens
+        output_tokens = usage.output_tokens
+        cached_tokens = usage.cached_tokens
+    else:
+        input_tokens  = 0
+        output_tokens = 0
+        cached_tokens = 0
 
+    ym = current_month()
     conn = db.get_connection()
     with conn:
         conn.execute(
@@ -53,10 +45,9 @@ def record(usage, cost_usd: float):
                 input_tokens  = input_tokens  + excluded.input_tokens,
                 output_tokens = output_tokens + excluded.output_tokens,
                 cached_tokens = cached_tokens + excluded.cached_tokens,
-                cost_usd      = cost_usd      + excluded.cost_usd,
                 updated_at    = CURRENT_TIMESTAMP
             """,
-            (ym, input_tokens, output_tokens, cached_tokens, cost_usd),
+            (ym, input_tokens, output_tokens, cached_tokens, 0.0),
         )
     conn.close()
 

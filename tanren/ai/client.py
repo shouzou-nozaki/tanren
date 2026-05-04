@@ -1,14 +1,8 @@
-import anthropic
 from datetime import date
 from tanren import config
 from tanren.storage import db
-
-MODEL = "claude-sonnet-4-6"
-
-_INPUT_PRICE       = 3.00  / 1_000_000
-_OUTPUT_PRICE      = 15.00 / 1_000_000
-_CACHE_WRITE_PRICE = 3.75  / 1_000_000
-_CACHE_READ_PRICE  = 0.30  / 1_000_000
+from tanren.ai.providers import REGISTRY, UsageInfo
+from tanren.ai.providers.base import BaseProvider
 
 _SYSTEM_PROMPT = """あなたは豊富な実務経験を持つシニアエンジニアリングコーチです。
 落ち着いた専門家として、的確で実践的なアドバイスを行います。
@@ -33,7 +27,22 @@ _SYSTEM_PROMPT = """あなたは豊富な実務経験を持つシニアエンジ
 - 詰まっている問題には根本原因を掘り下げ、再発しない理解を促す
 - 技術的な質問には正確かつ実践的に答える
 - キャリアやマインドセットの相談にも経験則を踏まえて向き合う
-- 回答は日本語で行う"""
+- 回答は{language}で行う"""
+
+
+def _get_provider() -> BaseProvider:
+    provider_id = config.get("provider", "gemini")
+    model = config.get("model", REGISTRY[provider_id].default_model)
+    api_key = config.get(f"{provider_id}_api_key") or config.get("api_key", "")
+    cls = REGISTRY.get(provider_id)
+    if cls is None:
+        raise RuntimeError(f"未知のプロバイダーです: {provider_id}")
+    return cls(api_key=api_key, model=model)
+
+
+def _build_system() -> str:
+    language = config.get("language", "日本語")
+    return _SYSTEM_PROMPT.format(language=language)
 
 
 def _build_context() -> str:
@@ -121,38 +130,22 @@ def _build_context() -> str:
     return "\n".join(parts)
 
 
-def calculate_cost(usage) -> float:
-    return (
-        getattr(usage, "input_tokens", 0)                  * _INPUT_PRICE
-        + getattr(usage, "output_tokens", 0)               * _OUTPUT_PRICE
-        + getattr(usage, "cache_creation_input_tokens", 0) * _CACHE_WRITE_PRICE
-        + getattr(usage, "cache_read_input_tokens", 0)     * _CACHE_READ_PRICE
-    )
-
-
-def chat_stream(question: str):
-    """ストリーミングでレスポンスを生成する。(text_chunk を yield し、最後に usage を返す)"""
-    api_key = config.get("api_key")
-    client = anthropic.Anthropic(api_key=api_key)
-
+def chat_stream(question: str, max_output_tokens: int = 1024):
+    """ストリーミング。text chunk を yield し、UsageInfo を StopIteration で返す"""
+    provider = _get_provider()
+    system = _build_system()
     context = _build_context()
-
-    system_content = [
-        {"type": "text", "text": _SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}},
-    ]
     if context:
-        system_content.append(
-            {"type": "text", "text": context, "cache_control": {"type": "ephemeral"}}
-        )
+        system += "\n\n" + context
+    return provider.chat_stream(question, system, max_output_tokens)
 
-    with client.messages.stream(
-        model=MODEL,
-        max_tokens=1024,
-        system=system_content,
-        messages=[{"role": "user", "content": question}],
-    ) as stream:
-        for text in stream.text_stream:
-            yield text
-        final = stream.get_final_message()
 
-    return final.usage
+def generate(prompt: str, max_output_tokens: int = 1024) -> tuple[str, UsageInfo]:
+    """非ストリーミング。コンテキストなしでシステムプロンプトのみ使用"""
+    provider = _get_provider()
+    system = _build_system()
+    return provider.generate(prompt, system, max_output_tokens)
+
+
+def calculate_cost(usage: UsageInfo) -> float:
+    return 0.0

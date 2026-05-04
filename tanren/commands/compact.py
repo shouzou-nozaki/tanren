@@ -207,21 +207,10 @@ def _compact_sessions(conn) -> int:
 
 {history_text}"""
 
-    import anthropic as _anthropic
-    from tanren.ai.client import MODEL, _SYSTEM_PROMPT, calculate_cost
+    from tanren.ai import client as ai_client
 
-    api_key = config.get("api_key")
-    client = _anthropic.Anthropic(api_key=api_key)
-
-    response = client.messages.create(
-        model=MODEL,
-        max_tokens=1024,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    summary_content = response.content[0].text
-    cost_usd = calculate_cost(response.usage)
-    budget.record(response.usage, cost_usd)
+    summary_content, usage = ai_client.generate(prompt, max_output_tokens=1024)
+    budget.record(usage)
 
     ids = tuple(s["id"] for s in to_compact)
     with conn:
@@ -234,8 +223,8 @@ def _compact_sessions(conn) -> int:
         )
         conn.execute(f"DELETE FROM sessions WHERE id IN ({','.join('?' * len(ids))})", ids)
 
-    usd_to_jpy = config.get("usd_to_jpy", 150)
-    console.print(f"[dim]セッションサマリー生成コスト: ¥{cost_usd * usd_to_jpy:.2f}[/dim]")
+    tokens = getattr(usage, "total_token_count", 0)
+    console.print(f"[dim]セッションサマリー生成トークン: {tokens}[/dim]")
     return len(to_compact)
 
 

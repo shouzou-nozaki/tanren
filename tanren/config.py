@@ -34,4 +34,6 @@ def set_value(key: str, value):
     save(config)
 
 def is_configured() -> bool:
-    return "api_key" in load()
+    cfg = load()
+    provider = cfg.get("provider", "gemini")
+    return f"{provider}_api_key" in cfg or "api_key" in cfg

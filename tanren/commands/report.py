@@ -23,11 +23,6 @@ def report():
         if not typer.confirm("このまま続けますか？", default=False):
             return
 
-    status = budget.check()
-    if status == "blocked":
-        console.print("[red]今月の予算上限に達しました。tanren budget status で確認してください。[/red]")
-        return
-
     conn = db.get_connection()
 
     checkins = conn.execute(
@@ -41,9 +36,6 @@ def report():
         """SELECT s.name, sh.level, sh.recorded_at
            FROM skill_history sh JOIN skills s ON sh.skill_id = s.id
            ORDER BY sh.recorded_at ASC"""
-    ).fetchall()
-    budget_rows = conn.execute(
-        "SELECT year_month, cost_usd FROM budget_usage ORDER BY year_month ASC"
     ).fetchall()
     conn.close()
 
@@ -59,11 +51,8 @@ def report():
     # ── 目標サマリー ──
     _print_goal_summary(goals_all)
 
-    # ── 累計コスト ──
-    _print_cost_summary(budget_rows)
-
     # ── AI による総合コメント ──
-    if checkins and (status != "blocked"):
+    if checkins:
         _print_ai_insight(checkins, skills, goals_all)
 
 
@@ -146,23 +135,6 @@ def _print_goal_summary(goals):
     console.print()
 
 
-def _print_cost_summary(budget_rows):
-    if not budget_rows:
-        return
-
-    total_usd = sum(r["cost_usd"] for r in budget_rows)
-    usd_to_jpy = config.get("usd_to_jpy", 150)
-
-    table = Table(title="累計API使用コスト", show_header=False)
-    table.add_column("月", style="cyan")
-    table.add_column("金額", justify="right")
-    for r in budget_rows:
-        table.add_row(r["year_month"], f"¥{r['cost_usd'] * usd_to_jpy:.1f}")
-    table.add_row("[bold]合計[/bold]", f"[bold]¥{total_usd * usd_to_jpy:.1f}[/bold]")
-
-    console.print(table)
-    console.print()
-
 
 def _print_ai_insight(checkins, skills, goals):
     checkin_summary = "\n".join(
@@ -198,11 +170,12 @@ def _print_ai_insight(checkins, skills, goals):
             full_response += chunk
     except StopIteration as e:
         usage = e.value
+    except RuntimeError as e:
+        console.print(f"\n[red]エラー: {e}[/red]")
+        return
 
     console.print("\n")
 
     if usage:
-        cost_usd = client.calculate_cost(usage)
-        cost_yen = cost_usd * config.get("usd_to_jpy", 150)
-        console.print(f"[dim]今回のコスト: ¥{cost_yen:.2f}[/dim]")
-        budget.record(usage, cost_usd)
+        console.print(f"[dim]トークン使用: {usage.total_tokens}[/dim]")
+        budget.record(usage)
