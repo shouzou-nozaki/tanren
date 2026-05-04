@@ -148,6 +148,12 @@ def _build_assessment_prompt() -> str:
     session_text = "\n".join(f"- {s['prompt'][:80]}" for s in sessions) or "記録なし"
     goal_text = "\n".join(f"- {g['title']}" for g in goals) or "なし"
 
+    github_text = ""
+    github_username = config.get("github_username")
+    if github_username:
+        from tanren.github import build_github_context
+        github_text = build_github_context(github_username)
+
     guidance = "\n".join(
         f"  - {major}: skills には {hint}" for major, hint in _SKILL_GUIDANCE.items()
     )
@@ -162,7 +168,7 @@ def _build_assessment_prompt() -> str:
 
 【現在の目標】
 {goal_text}
-
+{f"{chr(10)}{github_text}{chr(10)}" if github_text else ""}
 ---
 
 以下のJSON形式のみで回答してください。説明文は不要です。JSONだけを出力してください。
