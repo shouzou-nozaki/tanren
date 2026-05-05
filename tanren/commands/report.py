@@ -166,7 +166,7 @@ def _print_ai_insight(checkins, skills, goals):
     try:
         while True:
             chunk = next(gen)
-            console.print(chunk, end="")
+            print(chunk, end="", flush=True)
             full_response += chunk
     except StopIteration as e:
         usage = e.value
