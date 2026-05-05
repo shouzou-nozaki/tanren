@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tanren"
-version = "0.1.1"
+version = "0.1.2"
 description = "Technical Agent for Nurturing & Reinforcing Engineering Navigation — AI coaching CLI for engineers"
 readme = "README.md"
 license = { file = "LICENSE" }
